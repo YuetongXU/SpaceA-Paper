@@ -1,0 +1,544 @@
+from os.path import join
+import pandas as pd
+from pathlib import Path
+import subprocess
+import assembly
+configfile: "config.yaml"
+
+work_dir=config['WD']
+data_dir=config['DD']
+fastp_base_content_plot=config["FASTPLOT"]
+splitfqnum=config['SPLITFQNUM']
+barcode_id_jar=config["RUNBC"]
+lig_eff=config["RUNLIG"]
+lig_plot=config["RUNLIGPLOT"]
+full_bd=config["RUNFULLBC"]
+star_index_mouse=config["STARINDEX_MOUSE"]
+split_dna_rna=config["SPLITDNARNA"]
+star_mapping_stat_plot=config['STARSTATPLOT']
+add_chr=config["ADDCHR"]
+mask_mouse=config["MAKSMM10"]
+preseq_plot=config["PRESEQPLOT"]
+assembly_mouse=config["ASSEMBLY_MOUSE"]
+n_tags=config["NTAGS"]
+get_clusters=config["GETCLUSTER"]
+crick2juicerpre=config['C2JUICERPRE']
+juicer_tools=config['JUICERTOOLS']
+calculate_map_resolution=config['CALMAPRESO']
+cluster_size_plot=config['CSIZEPLOT']
+cis_trans=config["GETCISTRANS"]
+cistrans_stat_plot=config["CISTRANSPLOT"]
+splitbycell=config["SPLITBYCELL"]
+cellsel=config["CELLSEL"]
+numreadscontacts=config["NUMREADSCONTACTS"]
+normcdf=config["NORMCDF"]
+clusterbreakdown=config["CLUSTERBREAKDOWN"]
+single_filtered_stat_plot=config["SINGLEFILTERSTATPLOT"]
+chromosome_mouse=config["CHR_MOUSE"]
+get_sprite_contact=config["RUNCONTACT"]
+hic=config["RUNHIC"]
+min_cluster_size=config["CLUSTERMIN"]
+max_cluster_size=config["CLUSTERMAX"]
+resolution=config["RESOLUTION"]
+heat=config["HEATMAP"]
+max_scale=config["MAX"]
+celltop=config["CELLTOP"]
+spot_stat_plot=config['SPOTSTATPLOT']
+cworld_lib=config['CWORLD_PERL_LIB']
+generateBins=config['GENERATIONBINS']
+addMatrixHeaders=config['ADDMATRIXHEADER']
+matrix2compartment=config['MATRIX2COMPARTMENT']
+matrix2insulation=config['MATRIX2INSULATION']
+matrix2EigenVectors=config['MATRIX2EIGENVECTORS']
+insulation2tads=config['INSULATION2TADS']
+refseq=config['REFSEQ']
+mouse_chr_size_str=assembly.build(assembly_mouse, 1)._chromsizes
+
+
+#prepare data
+if not os.path.exists('rawdata_merge/data_ID.txt'):
+    subprocess.call('mkdir -p rawdata_merge;echo "Sample" > rawdata_merge/data_ID.txt', shell=True)
+    # subprocess.call(f'find {data_dir}/*/RawData/M* -name "*.fq.gz" |while read id;do filename=$(basename $id);ln -s $id rawdata_merge/$filename;done', shell=True)
+    subprocess.call('ls rawdata_merge/*_1.fq.gz | xargs -n 1 basename >> rawdata_merge/data_ID.txt', shell=True)
+    subprocess.call("sed -i 's/_1.fq.gz//g' rawdata_merge/data_ID.txt", shell=True)
+
+df = pd.read_csv('rawdata_merge/data_ID.txt', sep='\t', index_col='Sample')
+
+TYPES=['DNA']
+READS=['R1','R2']
+IDS=[str(i).zfill(3) for i in range(1,splitfqnum+1)]
+
+ALLSAMPLESRAW=df.index.to_list()
+
+SAMPLEDPMMERGE=['E13.5C1&E13.5C4']
+MOUSESAMPLES=['E13.5C6','E13.5C1&E13.5C4_dpm3','E13.5C1&E13.5C4_dpm4']
+ALLSAMPLESFINAL=MOUSESAMPLES
+
+wildcard_constraints:
+    sample= '|'.join([re.escape(x) for x in ALLSAMPLESRAW]),
+    read= '|'.join([re.escape(x) for x in READS]),
+    sampledpmmerge= '|'.join([re.escape(x) for x in SAMPLEDPMMERGE]),
+    mousesample= '|'.join([re.escape(x) for x in MOUSESAMPLES]),
+    samplefinal= '|'.join([re.escape(x) for x in ALLSAMPLESFINAL]),
+    mousechr='|'.join([re.escape(x) for x in chromosome_mouse]),
+
+#output
+MD5SUM=[work_dir+'/'+"log/md5/md5sum.log"]
+FASTP=[expand(work_dir+'/'+"fastp/clean/{sample}.html", sample=ALLSAMPLESRAW)]+[expand(work_dir+'/'+"fastp/raw/{sample}.html", sample=ALLSAMPLESRAW)]
+LIG_PLOT=[expand(work_dir+'/'+"ligation/{sample}/{sample}_ligation_efficiency_plot.png", sample=ALLSAMPLESRAW)]
+STARSTATPLOT=[expand(work_dir+'/'+'alignment/plot/{type}/{samplefinal}/mapping_stat_plot.png',samplefinal=ALLSAMPLESFINAL,type=TYPES)]
+CSIZEPLOT=[expand(work_dir+'/'+"cluster/{type}/{samplefinal}/clusters_{samplefinal}.cluster_size.png",samplefinal=ALLSAMPLESFINAL,type=TYPES)]
+CISTRANS=[expand(work_dir+'/'+"cluster/{type}/{samplefinal}/{samplefinal}_cistrans_stat.txt",samplefinal=ALLSAMPLESFINAL,type=TYPES)]
+CISTRANSPLOT=[expand(work_dir+'/'+"cluster/{type}/{samplefinal}/{samplefinal}_cistrans_stat.png",samplefinal=ALLSAMPLESFINAL,type=TYPES)]
+UMAPPBALSTN=[expand(work_dir+'/'+"umapp_blastn/{type}/{samplefinal}/{samplefinal}.part_001Unmapped.out.mate1.blastn",samplefinal=ALLSAMPLESFINAL,type=TYPES)]
+UMAPPMEME=[expand(work_dir+'/'+"umapp_meme/{type}/{samplefinal}/meme.html",samplefinal=ALLSAMPLESFINAL,type=TYPES)]
+ENSEMBLHEATMAPMOUSE=[expand(work_dir+'/'+"contact_bulk/{type}/{mousesample}/{mousechr}_final.png",mousesample=MOUSESAMPLES,type=TYPES,mousechr=chromosome_mouse)]
+PRESEQPLOT=[expand(work_dir+'/'+"preseq/{type}/{samplefinal}/{samplefinal}.allpart_future_yield.png",samplefinal=ALLSAMPLESFINAL,type=['DNA'])]
+DEDUP=[expand(work_dir+'/'+"alignment/{type}/{samplefinal}/{samplefinal}.part_{id}Aligned.sortedByCoord.out.rmdup.bam",samplefinal=ALLSAMPLESFINAL,type=TYPES,id=IDS)]
+
+rule all:
+    input: MD5SUM+FASTP+LIG_PLOT+STARSTATPLOT+CSIZEPLOT+CISTRANSPLOT+SPOTSTATPLOT+PRESEQPLOT+ENSEMBLHEATMAPMOUSE
+
+rule md5_check:
+    input: work_dir+'/'+"config.yaml"
+    output: work_dir+'/'+"log/md5/md5sum.log"
+    priority: 1
+    shell:\
+        """
+        find {data_dir} -name "*md5.txt" |while read id
+        do
+        path=$(dirname $id)
+        cd $path && md5sum -c *md5.txt
+        done >> {output}
+        """
+
+rule run_raw_fastp:
+    conda: "crick"
+    input:\
+        r1 = work_dir+'/'+"rawdata_merge/{sample}_1.fq.gz",
+        r2 = work_dir+'/'+"rawdata_merge/{sample}_2.fq.gz",
+    output:\
+        work_dir+'/'+"fastp/raw/{sample}.html",
+        work_dir+'/'+"fastp/raw/{sample}.json"
+    log: work_dir+'/'+"log/fastp/raw/fastp_{sample}.txt"
+    threads: 5
+    shell:\
+        """
+        mkdir -p {work_dir}/fastp/raw
+        fastp \
+        --in1 {input.r1} --in2 {input.r2} \
+        --html {work_dir}/fastp/raw/{wildcards.sample}.html \
+        --json {work_dir}/fastp/raw/{wildcards.sample}.json \
+        --disable_adapter_trimming \
+        --thread {threads} \
+        --disable_length_filtering \
+        --disable_trim_poly_g &> {log}
+        """
+
+rule cutadapt:
+    '''
+    https://www.seqanswers.com/forum/general/74820-trimming-bgi-adapters
+    https://bioinfo.online/articleList/202210832243.html
+    https://www.jianshu.com/p/4ee2f4d2292f?utm_campaign=maleskine...&utm_content=note&utm_medium=seo_notes&utm_source=recommendation
+    -a ADAPTER Sequence of an adapter ligated to the 3' end (paired data: of the first read)
+    -A ADAPTER          3' adapter to be removed from second read in a pair
+    '''
+    conda: 'sciatac'
+    input:
+        r1 = work_dir+'/'+"rawdata_merge/{sample}_1.fq.gz",
+        r2 = work_dir+'/'+"rawdata_merge/{sample}_2.fq.gz"
+    output:
+        r1 = temp(work_dir+'/'+"cleandata/{sample}_R1.fq.gz"),
+        r2 = temp(work_dir+'/'+"cleandata/{sample}_R2.fq.gz"),
+        qc=  work_dir+'/'+"log/cutadapt/{sample}_trim.qc.txt"
+    params: "-a AAGTCGGAGGCCAAGCGGTCTTAGGAAGACAA -A AAGTCGGATCGTAGCCATGTCGTTCTGTGAGCCAAGGAGTTG"
+    log: work_dir+'/'+"log/cutadapt/{sample}.log"
+    threads: 15
+    shell:\
+        """
+        cutadapt {params} -j {threads} --minimum-length 50 -o {output.r1} -p {output.r2}  \
+        {input.r1} {input.r2} 1> {output.qc} 2> {log}
+        """
+
+rule run_clean_fastp:
+    conda: "crick"
+    input:\
+        r1 = rules.cutadapt.output.r1,
+        r2 = rules.cutadapt.output.r2
+    output:\
+        work_dir+'/'+"fastp/clean/{sample}.html",
+        work_dir+'/'+"fastp/clean/{sample}.json"
+    log: work_dir+'/'+"log/fastp/clean/fastp_{sample}.txt"
+    threads: 5
+    shell:\
+        """
+        mkdir -p {work_dir}/fastp/clean
+        fastp \
+        --in1 {input.r1} --in2 {input.r2} \
+        --html {work_dir}/fastp/clean/{wildcards.sample}.html \
+        --json {work_dir}/fastp/clean/{wildcards.sample}.json \
+        --disable_adapter_trimming \
+        --thread {threads} \
+        --disable_length_filtering \
+        --disable_trim_poly_g &> {log}
+        """
+
+rule split_fq:
+    conda: 'crick'
+    input:
+        r1 = rules.cutadapt.output.r1,
+        r2 = rules.cutadapt.output.r2,
+    output:
+        r1 =temp(expand(work_dir+'/'+"split_fq/{sample}/{sample}_R1.part_{id}.fq.gz",id=IDS,allow_missing=True)),
+        r2 =temp(expand(work_dir+'/'+"split_fq/{sample}/{sample}_R2.part_{id}.fq.gz",id=IDS,allow_missing=True))
+    log: work_dir+'/'+"log/split_fq/{sample}.log"
+    threads: 15
+    shell:\
+        """
+        mkdir -p {work_dir}/split_fq/{wildcards.sample}
+        seqkit split2 -1 {input.r1} -2 {input.r2} \
+        --by-part {splitfqnum} --threads {threads} \
+        --out-dir {work_dir}/split_fq/{wildcards.sample} --extension .gz  &> {log}
+        """
+
+rule barcode_id:
+    conda: 'crick'
+    input:
+        r1 = work_dir+'/'+"split_fq/{sample}/{sample}_R1.part_{id}.fq.gz",
+        r2 = work_dir+'/'+"split_fq/{sample}/{sample}_R2.part_{id}.fq.gz"
+    output:
+        r1_barcoded =temp(work_dir+'/'+"new_fastq/{sample}/{sample}.part_{id}_R1.barcoded.fastq.gz"),
+        r2_barcoded =temp(work_dir+'/'+"new_fastq/{sample}/{sample}.part_{id}_R2.barcoded.fastq.gz")
+    log: work_dir+'/'+"log/bID/{sample}/{sample}.part_{id}.log"
+    shell:\
+        """
+        mkdir -p {work_dir}/new_fastq/{wildcards.sample}
+        java -jar {barcode_id_jar} \
+        --input1 {input.r1} --input2 {input.r2} \
+        --output1 {output.r1_barcoded} --output2 {output.r2_barcoded} \
+        --config {work_dir}/config_spaSPRITE_{wildcards.sample}.txt &> {log}
+        """
+
+# rule trim_r1_reads:
+#     input:
+#         "new_fastq/{sample}_R1.barcoded.fastq.gz"
+#     output:
+#         "new_fastq/{sample}_R1.trimmed.fastq.gz"
+#     shell:
+#         """
+#          zcat {input} | awk -v len={trimr1} '{{if(NR%2==0) print substr($0,1,len); else print $0;}}' | gzip > {output}
+#         """
+
+rule merge_fq:
+    conda: "crick"
+    input: expand(work_dir+'/'+"new_fastq/{sample}/{sample}.part_{id}_R2.barcoded.fastq.gz",id=IDS,allow_missing=True) #partial expand
+    output: temp(work_dir+'/'+"new_fastq/{sample}/{sample}_R2.allpart.barcoded.fastq.gz")
+    log: work_dir+'/'+"log/mfq/{sample}/{sample}_R2.mfq.log"
+    shell: "cat {input} > {output} 2> {log}"
+
+rule get_ligation_efficiency:
+    conda: "crick"
+    input:  rules.merge_fq.output
+    output: work_dir+'/'+"ligation/{sample}/{sample}.ligation_efficiency.txt"
+    shell:\
+        """
+        mkdir -p {work_dir}/ligation/{wildcards.sample}
+        python {lig_eff} {input} {work_dir}/ligation/{wildcards.sample} > {output}
+        """
+
+rule run_ligation_efficiency_plot:
+    conda: 'crick'
+    input: rules.get_ligation_efficiency.output
+    output: work_dir+'/'+"ligation/{sample}/{sample}_ligation_efficiency_plot.png"
+    shell: "python {lig_plot} {work_dir}/ligation/{wildcards.sample}"
+
+rule full_barcode:
+    '''
+    remove incomplete barcodes
+    '''
+    conda: "crick"
+    input: work_dir+'/'+"new_fastq/{sample}/{sample}.part_{id}_{read}.barcoded.fastq.gz"
+    output:\
+        full= temp(work_dir+'/'+"new_fastq/{sample}/{sample}.part_{id}_{read}.barcoded_full.fastq.gz"),\
+        short= temp(work_dir+'/'+"new_fastq/{sample}/{sample}.part_{id}_{read}.barcoded_short.fastq.gz")
+    log: work_dir+'/'+"log/fB/{sample}/full_barcode_{sample}.part_{id}_{read}.txt"
+    shell: "python {full_bd} --r1 {input} &> {log}"
+
+rule fq_titile_reform:
+    '''
+    fq_titile_reform
+    '''
+    conda: "crick"
+    input: rules.full_barcode.output.full
+    output: temp(work_dir+'/'+"new_fastq/{sample}/{sample}.part_{id}_{read}.barcoded_full_rf_{type}.fastq.gz")
+    log: work_dir+'/'+"log/fqrf/{sample}/fq_titile_reform_{sample}.part_{id}_{read}_{type}.txt"
+    threads: 15
+    shell:"zcat {input} | awk '{{ if(NR%4==1) {{sub(/\/[1-2]/,'_')}} {{print}} }}' | pigz -p {threads} 1> {output} 2> {log}"
+
+rule split_sample:
+    '''
+    dpm3,dpm4
+    '''
+    conda: "crick"
+    input: work_dir+'/'+"new_fastq/{sampledpmmerge}/{sampledpmmerge}.part_{id}_{read}.barcoded_full_rf_{type}.fastq.gz"
+    params:
+        split_fq_dpm=work_dir+'/'+'split_dpm_from_full_BC_fq.py'
+    output:\
+        dpm3= temp(work_dir+'/'+"new_fastq/{sampledpmmerge}_dpm3/{sampledpmmerge}_dpm3.part_{id}_{read}.barcoded_full_rf_{type}.fastq.gz"),\
+        dpm4= temp(work_dir+'/'+"new_fastq/{sampledpmmerge}_dpm4/{sampledpmmerge}_dpm4.part_{id}_{read}.barcoded_full_rf_{type}.fastq.gz")
+    log: work_dir+'/'+"log/split_sample/{sampledpmmerge}/split_sample_{sampledpmmerge}.part_{id}_{read}_{type}.txt"
+    shell: "python {params.split_fq_dpm} --dpm3 {output.dpm3} --dpm4 {output.dpm4} --full_bc_fq {input} &> {log}"
+
+rule align_to_mouse_genome:
+    conda: 'crick'
+    input: work_dir+'/'+"new_fastq/{mousesample}/{mousesample}.part_{id}_R1.barcoded_full_rf_{type}.fastq.gz"
+    output: main = temp(work_dir+'/'+"alignment/{type}/{mousesample}/{mousesample}.part_{id}Aligned.sortedByCoord.out.bam"),
+            Unmapped = temp(work_dir+'/'+"alignment/{type}/{mousesample}/{mousesample}.part_{id}Unmapped.out.mate1")
+    log: work_dir+'/'+"log/star/{type}/{mousesample}/star_{mousesample}.part_{id}.txt"
+    threads: 10
+    shell:\
+        """
+        mkdir -p {work_dir}/alignment/{wildcards.type}/{wildcards.mousesample}
+        STAR --outReadsUnmapped Fastx \
+        --sjdbOverhang 149 \
+        --genomeDir {star_index_mouse} \
+        --readFilesIn {input} \
+        --readFilesCommand zcat \
+        --runThreadN {threads} \
+        --outFileNamePrefix {work_dir}/alignment/{wildcards.type}/{wildcards.mousesample}/{wildcards.mousesample}.part_{wildcards.id} \
+        --outSAMtype BAM SortedByCoordinate \
+        --outSAMattributes All \
+        --limitOutSJcollapsed 1000000 \
+        --limitIObufferSize=150000000 &> {log}
+        """
+
+rule merge_and_sort_raw_bam:
+    conda: 'crick'
+    input: expand(work_dir+'/'+"alignment/{type}/{samplefinal}/{samplefinal}.part_{id}Aligned.sortedByCoord.out.bam",id=IDS,allow_missing=True) #partial expand
+    output: temp(work_dir+'/'+"alignment/{type}/{samplefinal}/{samplefinal}.allpartAligned.sortedByCoord.out.bam")
+    log: work_dir+'/'+"log/mbam_forpreseq/{type}/{samplefinal}/mbam_forpreseq.{samplefinal}.allpart.log"
+    threads: 15
+    shell: \
+        """
+        samtools merge {output} {input} --threads {threads} 2> {log}
+        """
+
+rule dedup:
+    conda: 'crick'
+    input: rules.merge_and_sort_raw_bam.output
+    output: temp(work_dir+'/'+"alignment/{type}/{samplefinal}/{samplefinal}.allpartAligned.sortedByCoord.out.rmdup.bam")
+    log: work_dir+'/'+"log/dedup/{type}/{samplefinal}/dedup_{samplefinal}.allpartAligned.txt"
+    shell:\
+        """
+        (picard MarkDuplicates \
+		MAX_FILE_HANDLES_FOR_READ_ENDS_MAP=1000 \
+		REMOVE_DUPLICATES=true \
+		METRICS_FILE={work_dir}/log/dedup/{wildcards.type}/{wildcards.samplefinal}/{wildcards.samplefinal}.allpartAligned.metrics.txt \
+		I={input} \
+		O={output}) &> {log}
+        """
+
+rule unique_mappers:
+    conda: 'crick'
+    input: rules.dedup.output
+    output: temp(work_dir+'/'+"alignment/{type}/{samplefinal}/{samplefinal}.allpartAligned.sortedByCoord.out.unique.rmdup.bam")
+    log: work_dir+'/'+"log/star/{type}/{samplefinal}/unimap_{samplefinal}.allpartAligned.txt"
+    shell: "samtools view -b -q 255 -o {output} {input} > {log} "
+
+rule add_mouse_chr:
+    conda: "crick"
+    input: work_dir+'/'+"alignment/{type}/{mousesample}/{mousesample}.allpartAligned.sortedByCoord.out.unique.rmdup.bam"
+    output: work_dir+'/'+"alignment/{type}/{mousesample}/{mousesample}.allpartAligned.sortedByCoord.out.unique.chr.rmdup.bam"
+    log: work_dir+'/'+"log/add_chr/{type}/{mousesample}/add_chr_{mousesample}.allpartAligned.txt"
+    shell: "python {add_chr} -i {input} -o {output} --assembly {assembly_mouse} &> {log}"
+
+# rule add_human_chr:
+#     conda: "crick"
+#     input: work_dir+'/'+"alignment/{type}/{humansample}/{humansample}.allpartAligned.sortedByCoord.out.unique.rmdup.bam"
+#     output: work_dir+'/'+"alignment/{type}/{humansample}/{humansample}.allpartAligned.sortedByCoord.out.unique.chr.rmdup.bam"
+#     log: work_dir+'/'+"log/add_chr/{type}/{humansample}/add_chr_{humansample}.allpartAligned.txt"
+#     shell: "python {add_chr} -i {input} -o {output} --assembly {assembly_human} &> {log}"
+
+rule preseq_c_curve:
+    conda: 'crick'
+    input: rules.merge_and_sort_raw_bam.output
+    output: work_dir+'/'+"preseq/{type}/{samplefinal}/{samplefinal}.allpart_complexity_output.txt",
+    log: work_dir+'/'+"log/preseq/{type}/{samplefinal}/{samplefinal}.allpart_ccurve.log",
+    shell:\
+        """
+        mkdir -p {work_dir}/preseq/{wildcards.type}/{wildcards.samplefinal}
+        lines=$(samtools view -c {input})
+        intlines100s=$(($lines/100))
+        preseq c_curve -s $intlines100s -verbose -B {input} -o {output} &> {log}
+        """
+
+rule preseq_lc_extrap:
+    conda: 'crick'
+    input: rules.merge_and_sort_raw_bam.output
+    output: work_dir+'/'+"preseq/{type}/{samplefinal}/{samplefinal}.allpart_future_yield.txt"
+    log: work_dir+'/'+"log/preseq/{type}/{samplefinal}/{samplefinal}.allpart_lc_extrap.log"
+    shell:\
+        """
+        lines=$(samtools view -c {input})
+        intlines10s=$(($lines/10))
+        lines50=$(($lines*50))
+        preseq lc_extrap -defects -verbose -s $intlines10s -e $lines50 -B {input} -o {output} &> {log}
+        """
+
+rule preseq_plot:
+    conda: 'crick'
+    input:\
+        c_curve=rules.preseq_c_curve.output,
+        lc_extrap=rules.preseq_lc_extrap.output
+    output:\
+        work_dir+'/'+"preseq/{type}/{samplefinal}/{samplefinal}.allpart_complexity_output.png",\
+        work_dir+'/'+"preseq/{type}/{samplefinal}/{samplefinal}.allpart_future_yield.png"
+    shell: "python {preseq_plot} {work_dir}/preseq/{wildcards.type}/{wildcards.samplefinal}"
+
+rule umapp_blastn:
+    conda: 'crick'
+    input: work_dir+'/'+"alignment/{type}/{samplefinal}/{samplefinal}.part_001Unmapped.out.mate1"
+    output:
+        fa=work_dir+'/'+"umapp_blastn/{type}/{samplefinal}/{samplefinal}.part_001Unmapped.out.mate1.fa",
+        fa100=work_dir+'/'+"umapp_blastn/{type}/{samplefinal}/{samplefinal}.part_001Unmapped.out.mate1.top100.fa",
+        blastn=work_dir+'/'+"umapp_blastn/{type}/{samplefinal}/{samplefinal}.part_001Unmapped.out.mate1.blastn"
+    log: work_dir+'/'+"log/umapp_blastn/{type}/{samplefinal}/umapp_blastn_{samplefinal}.part_001.txt"
+    threads: 5
+    shell:\
+        """
+        mkdir -p umapp_blastn/{wildcards.type}/{wildcards.samplefinal}
+        (seqkit fq2fa {input} --threads {threads} --out-file {output.fa}
+        seqkit sample {output.fa} -n 100 > {output.fa100}
+        blastn -query {output.fa100} -out {output.blastn} \
+        -max_target_seqs 1 -outfmt \
+        '6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore stitle' \
+        -db /home/goubo/reference/blast_db/nt \
+        -num_threads {threads} -evalue 1e-5) &> {log}
+        """
+
+rule umapp_meme:
+    conda: 'meme'
+    input: rules.umapp_blastn.output.fa
+    output:
+        fa1000=work_dir+'/'+"umapp_meme/{type}/{samplefinal}/part_001Unmapped.out.mate1.top1000.fa",
+        html=work_dir+'/'+"umapp_meme/{type}/{samplefinal}/meme.html"
+    log: work_dir+'/'+"log/umapp_meme/{type}/{samplefinal}/umapp_meme_{samplefinal}.part_001.txt"
+    threads: 5
+    shell:\
+        """
+        mkdir -p {work_dir}/umapp_meme/{wildcards.type}/{wildcards.samplefinal}
+        (seqkit sample {input} -n 1000 > {output.fa1000}
+        meme {output.fa1000} -dna -oc {work_dir}/umapp_meme/{wildcards.type}/{wildcards.samplefinal} \
+        -time 14400 -mod zoops -nmotifs 10 -p {threads} \
+        -minw 6 -maxw 150 -objfun classic -revcomp) &> {log}
+        """
+
+rule star_mapping_stat_plot:
+    conda: 'crick'
+    input: expand(work_dir+'/'+"alignment/{type}/{samplefinal}/{samplefinal}.part_{id}Aligned.sortedByCoord.out.bam",id=IDS,allow_missing=True)
+    output: work_dir+'/'+"alignment/plot/{type}/{samplefinal}/mapping_stat_plot.png"
+    shell: "python {star_mapping_stat_plot} {work_dir}/alignment/{wildcards.type}/{wildcards.samplefinal} {work_dir}/alignment/plot/{wildcards.type}/{wildcards.samplefinal}"
+
+
+# rule repeat_mask:
+    # conda: 'crick'
+#     input: work_dir+'/'+"alignment/{type}/{sample}/{sample}.part_{id}Aligned.sortedByCoord.out.unique.chr.bam"
+#     output: work_dir+'/'+"alignment/{type}/{sample}/{sample}.part_{id}Aligned.sortedByCoord.out.unique.chr.masked.bam"
+#     shell: "bedtools intersect -v -a {input} -b {mask_mouse} > {output}"
+
+rule make_ensembl_clusters:
+    conda: 'crick'
+    input: work_dir+'/'+"alignment/{type}/{samplefinal}/{samplefinal}.allpartAligned.sortedByCoord.out.unique.chr.rmdup.bam"
+    output: work_dir+'/'+"cluster/{type}/{samplefinal}/clusters_{samplefinal}"
+    log: work_dir+'/'+"log/cluster/{type}/{samplefinal}/make_clusters_{samplefinal}.log"
+    shell: "python {get_clusters} -i {input} -o {output} -n {n_tags} &> {log}"
+
+
+rule run_mouse_ensembl_contact:
+    conda: 'CRICK_python2'
+    input: work_dir+'/'+"cluster/{type}/{mousesample}/clusters_{mousesample}"
+    output:
+        raw_contact=work_dir+'/'+"contact_bulk/{type}/{mousesample}/{mousechr}.{reso}.raw_contact",
+        biases=work_dir+'/'+"contact_bulk/{type}/{mousesample}/{mousechr}.{reso}.biases",
+        ic=work_dir+'/'+"contact_bulk/{type}/{mousesample}/{mousechr}.{reso}.ic",
+        final_contact=work_dir+'/'+"contact_bulk/{type}/{mousesample}/{mousechr}.{reso}.final_contact"
+    log: work_dir+'/'+"log/contact_bulk/{type}/{mousesample}/{mousesample}_{mousechr}.{reso}.run_ensembl_contact.log"
+    params: downweighting='n_minus_one'
+    shell:\
+        """
+        python2.7 {get_sprite_contact} --clusters {input} \
+        --raw_contacts {output.raw_contact} \
+        --biases {output.biases} --iced {output.ic} \
+        --output {output.final_contact} --assembly {assembly_mouse} \
+        --chromosome {wildcards.mousechr} --min_cluster_size {min_cluster_size} \
+        --max_cluster_size {max_cluster_size} --resolution {wildcards.reso} \
+        --downweighting {params.downweighting} --hicorrector {hic} > {log}
+        """
+
+
+rule run_mouse_ensembl_heatmap:
+    conda: 'crick'
+    input: work_dir+'/'+"contact_bulk/{type}/{mousesample}/{mousechr}.1000000.final_contact"
+    log: work_dir+'/'+"log/contact_bulk/{type}/{mousesample}/{mousesample}_{mousechr}.run_ensembl_heatmap.log"
+    output: work_dir+'/'+"contact_bulk/{type}/{mousesample}/{mousechr}_final.png"
+    shell:"python {heat} {input} {output} &> {log}"
+
+rule ensembl_cluster_size_plot:
+    conda: 'crick'
+    input: rules.make_ensembl_clusters.output
+    output: work_dir+'/'+"cluster/{type}/{samplefinal}/clusters_{samplefinal}.cluster_size.png"
+    log: work_dir+'/'+"log/cluster/{type}/{samplefinal}/cluster_size_plot_{samplefinal}.log"
+    shell: "python {cluster_size_plot} --in {input} --out {output} &> {log}"
+
+rule ensembl_mouse_cis_trans:
+    conda: 'crick'
+    input:  work_dir+'/'+"cluster/{type}/{mousesample}/clusters_{mousesample}"
+    output: work_dir+'/'+"cluster/{type}/{mousesample}/{mousesample}_cistrans_stat.txt",
+    log: work_dir+'/'+"log/cluster/{type}/{mousesample}/cistrans_{mousesample}.txt"
+    shell: "python {cis_trans} {input} {assembly_mouse} {output} &> {log}"
+
+rule ensembl_cis_trans_plot:
+    conda: 'crick'
+    input:  work_dir+'/'+"cluster/{type}/{samplefinal}/{samplefinal}_cistrans_stat.txt"
+    log: work_dir+'/'+"log/cluster/{type}/{samplefinal}/plot_cistrans_{samplefinal}.txt"
+    output: work_dir+'/'+"cluster/{type}/{samplefinal}/{samplefinal}_cistrans_stat.png"
+    shell: "python {cistrans_stat_plot} {input} {output} &> {log}"
+
+rule reformat_clusters:
+    input: rules.make_ensembl_clusters.output
+    output: work_dir+'/'+"cluster/{type}/{samplefinal}/clusters_{samplefinal}_reform"
+    log: work_dir+'/'+"log/cluster/{type}/{samplefinal}/reformat_clusters_{samplefinal}.log"
+    shell:\
+        """
+        awk '{{print $1}}' {input} > cluster/{wildcards.type}/{wildcards.samplefinal}_temp1.txt
+        awk '{{$1=""; print}}' {input} > cluster/{wildcards.type}/{wildcards.samplefinal}_temp2.txt
+        sed -i 's/ /\t/g' cluster/{wildcards.type}/{wildcards.samplefinal}_temp2.txt
+        awk -F"." '{{print $5"."$4"."$3"."$2"."$1}}' cluster/{wildcards.type}/{wildcards.samplefinal}_temp1.txt > cluster/{wildcards.type}/{wildcards.samplefinal}_temp3.txt
+        paste cluster/{wildcards.type}/{wildcards.samplefinal}_temp3.txt cluster/{wildcards.type}/{wildcards.samplefinal}_temp2.txt > {output}
+        sed -i 's/\t\t/\t/g' {output}
+        /bin/rm cluster/{wildcards.type}/{wildcards.samplefinal}_temp1.txt
+        /bin/rm cluster/{wildcards.type}/{wildcards.samplefinal}_temp2.txt
+        /bin/rm cluster/{wildcards.type}/{wildcards.samplefinal}_temp3.txt
+        """
+
+rule cluster_split_by_cell:
+    conda: "crick"
+    input: rules.reformat_clusters.output
+    log: work_dir+'/'+"log/split_by_cell/{type}/split_by_cell_{samplefinal}.txt"
+    output: work_dir+'/'+"cluster/{type}/{samplefinal}/single_filtered/one_last_time.txt"
+    shell:\
+        """
+        mkdir -p {work_dir}/cluster/{wildcards.type}/{wildcards.samplefinal}/single
+        mkdir -p {work_dir}/cluster/{wildcards.type}/{wildcards.samplefinal}/single_filtered
+        cd {work_dir}/cluster/{wildcards.type}/{wildcards.samplefinal}/single
+        (python {splitbycell} {input}
+        ls -S | awk '{{ if($1~"^odd" && FNR<={cellsel}) system("mv "$1" ../single_filtered/")}}'
+        /bin/rm -r {work_dir}/cluster/{wildcards.type}/{wildcards.samplefinal}/single
+        cd {work_dir}/cluster/{wildcards.type}/{wildcards.samplefinal}/single_filtered
+        python {numreadscontacts}
+        sort -r -n -k3 one_last_time.txt | awk '{{if($1!~"Cell") print}}'> one_last_time_sort_reads.txt
+        sort -r -n -k2 one_last_time.txt | awk '{{if($1!~"Cell") print}}'> one_last_time_sort_clusters.txt
+        python {normcdf} ) > {log}
+        """
+
+

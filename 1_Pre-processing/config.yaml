@@ -1,0 +1,80 @@
+##########################
+# result dir
+WD: /spaceA
+# data dir
+DD: /home/spaceA/rawdata
+
+#get chromosome information (chrN for intra-chromosomal interaction, genome for inter-chromosomal interaction) to generate contact map
+CHR_MOUSE: ["genome","chr1","chr2","chr3","chr4","chr5","chr6","chr7","chr8","chr9","chr10","chr11","chr12","chr13","chr14","chr15","chr16","chr17","chr18","chr19","chrX"]
+#get minimal cluster size for calculating contact map
+CLUSTERMIN: 2
+#get maximal cluster size for calculating contact map
+CLUSTERMAX: 1000
+#The binning resolution for contact map
+RESOLUTION: [40000,1000000]
+#split fq num
+SPLITFQNUM: 30
+#star index
+STARINDEX_MOUSE: /home/reference/index/star/mm10/index
+#get genome assembly information
+ASSEMBLY_MOUSE: mm10
+# tags num
+NTAGS: 6
+#estimiated number of top single-cells for contact and heatmap
+CELLTOP: 1500
+#estimated number of single-cells
+CELLSEL: 10000
+#max value for the color-scale of the heatmaps
+MAX: 1
+
+#########################################################################################################
+#run fastp base content plot
+FASTPLOT: /home/spt/fastp_base_content_plot.py
+#barcode id
+RUNBC: /spaceA/BarcodeIdentification_v1.2.0.jar
+#ligation efficiency
+RUNLIG: /home/spt/get_ligation_efficiency.py
+#ligation efficiency plot
+RUNLIGPLOT: /home/spt/ligation_efficiency_barplot.py
+#split DNA and RNA
+SPLITDNARNA: /home/spt/split_dna_rna_from_full_BC_fq.py
+#run get full barcodes
+RUNFULLBC: /spaceA/spt/get_full_barcodes.py
+#star mapping stat plot
+STARSTATPLOT: /home/spt/star_mapping_stat_plot_v2.py
+# add chr
+ADDCHR: /spaceA/spt/ensembl2ucsc.py
+PRESEQPLOT: /home/spt/preseq_plot.py
+# get clusters
+GETCLUSTER: /home/spt/getcluster.py
+# crick to juice pre
+C2JUICERPRE: /home/spt/scCRICK_crick2juicerpre.py
+# juicer_tools
+JUICERTOOLS : /home/biosoft/juicertest/juicer/CPU/common/juicer_tools.jar
+# hicConvertFormat
+HICCONVERTFORMAT: /home/biosoft/miniconda3/envs/hicexplorer/bin/hicConvertFormat
+# cis/trans
+GETCISTRANS: /home/spt/crick_cis_trans_num.py
+# cistrans stat plot
+CISTRANSPLOT: /home/spt/cistrans_stat_plot.py
+#cluster size plot
+CSIZEPLOT : /home/spt/cluster_size_plot.py
+#split by celll script
+SPLITBYCELL: /spaceA/spt/split_by_cell.py
+#numreads numcontacts script
+NUMREADSCONTACTS: /spaceA/spt/numreads_numcontacts.py
+#normalized cdf single-cell reads clusters
+NORMCDF: /spaceA/normalized_cdf_sc_reads_clusters.py
+#cluster breakdown
+CLUSTERBREAKDOWN: /spaceA/spt/cluster_breakdown.py
+#single filtered stat plot
+SINGLEFILTERSTATPLOT: /home/spt/single_filtered_stat_plot.py
+#run sprite_contact
+RUNCONTACT: /home/spt/get_contacts_bulk_sprite_v1.py
+#hicorrector ic excutable path
+RUNHIC:  /spaceA/HiCorrector_1.2/bin/ic   # Please specify your local Hi-Corrector directory
+
+
+
+
+
